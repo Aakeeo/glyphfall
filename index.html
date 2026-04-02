@@ -44,23 +44,18 @@
     touch-action: none;
   }
 
-  /* ── CRT / SCANLINE OVERLAY ── */
   body::after {
     content: '';
     position: fixed;
     inset: 0;
     background: repeating-linear-gradient(
-      0deg,
-      transparent,
-      transparent 2px,
-      rgba(0, 0, 0, 0.08) 2px,
-      rgba(0, 0, 0, 0.08) 4px
+      0deg, transparent, transparent 2px,
+      rgba(0, 0, 0, 0.08) 2px, rgba(0, 0, 0, 0.08) 4px
     );
     pointer-events: none;
     z-index: 9999;
   }
 
-  /* ── VIGNETTE ── */
   body::before {
     content: '';
     position: fixed;
@@ -151,6 +146,8 @@
     justify-content: center;
     background: rgba(5, 6, 10, 0.92);
     backdrop-filter: blur(8px);
+    overflow-y: auto;
+    padding: 24px;
   }
 
   .overlay h1 {
@@ -195,6 +192,37 @@
     transform: translateY(-1px);
   }
 
+  /* ── DIFFICULTY SELECTOR ── */
+  .difficulty-selector {
+    display: flex;
+    gap: 0;
+    margin-bottom: 24px;
+    border: 1px solid rgba(0, 240, 255, 0.2);
+    border-radius: 6px;
+    overflow: hidden;
+  }
+
+  .diff-btn {
+    padding: 10px 24px;
+    background: transparent;
+    border: none;
+    border-right: 1px solid rgba(0, 240, 255, 0.15);
+    color: rgba(255, 255, 255, 0.35);
+    font: 500 11px/1 var(--display);
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    cursor: pointer;
+    transition: all 0.2s;
+    touch-action: manipulation;
+  }
+  .diff-btn:last-child { border-right: none; }
+  .diff-btn:hover { color: rgba(255, 255, 255, 0.6); background: rgba(0, 240, 255, 0.04); }
+  .diff-btn.active {
+    color: var(--cyan);
+    background: rgba(0, 240, 255, 0.1);
+    text-shadow: 0 0 10px rgba(0, 240, 255, 0.4);
+  }
+
   /* ── HIGH SCORES ── */
   .hi-scores {
     font: 400 12px/1 var(--mono);
@@ -226,7 +254,6 @@
   }
   .go-stat-val.magenta { color: var(--magenta); text-shadow: var(--glow-magenta); }
 
-  /* ── NEW BEST BADGE ── */
   .new-best {
     display: inline-block;
     margin-top: 6px;
@@ -240,15 +267,92 @@
     to { opacity: 1; text-shadow: 0 0 12px var(--amber); }
   }
 
-  /* ── PAUSE OVERLAY ── */
-  #pause-screen .sub {
-    margin-bottom: 0;
+  /* ── GAME OVER BUTTONS ── */
+  .go-buttons {
+    display: flex;
+    gap: 12px;
+    flex-wrap: wrap;
+    justify-content: center;
+  }
+
+  .share-btn {
+    padding: 14px 36px;
+    touch-action: manipulation;
+    background: transparent;
+    border: 1px solid var(--amber);
+    border-radius: 6px;
+    color: var(--amber);
+    font: 500 14px/1 var(--display);
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    cursor: pointer;
+    transition: all 0.25s;
+    box-shadow: 0 0 12px rgba(255, 184, 0, 0.15);
+  }
+  .share-btn:hover {
+    background: rgba(255, 184, 0, 0.08);
+    box-shadow: 0 0 20px rgba(255, 184, 0, 0.3);
+    transform: translateY(-1px);
+  }
+
+  .share-toast {
+    position: fixed;
+    bottom: 80px;
+    left: 50%;
+    transform: translateX(-50%) translateY(20px);
+    padding: 10px 20px;
+    background: rgba(255, 184, 0, 0.15);
+    border: 1px solid rgba(255, 184, 0, 0.3);
+    border-radius: 6px;
+    color: var(--amber);
+    font: 400 12px/1 var(--mono);
+    z-index: 300;
+    opacity: 0;
+    transition: opacity 0.3s, transform 0.3s;
+    pointer-events: none;
+  }
+  .share-toast.show {
+    opacity: 1;
+    transform: translateX(-50%) translateY(0);
+  }
+
+  /* ── SOUND TOGGLE ── */
+  .sound-toggle {
+    position: fixed;
+    top: 12px;
+    right: 12px;
+    z-index: 250;
+    width: 36px;
+    height: 36px;
+    background: rgba(10, 13, 20, 0.7);
+    border: 1px solid rgba(0, 240, 255, 0.15);
+    border-radius: 6px;
+    color: rgba(255, 255, 255, 0.4);
+    font-size: 16px;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: all 0.2s;
+    touch-action: manipulation;
+    line-height: 1;
+  }
+  .sound-toggle:hover { border-color: rgba(0, 240, 255, 0.3); color: rgba(255,255,255,0.6); }
+  .sound-toggle.muted { color: rgba(255, 45, 120, 0.5); }
+
+  #pause-screen .sub { margin-bottom: 0; }
+
+  @media (max-width: 500px) {
+    .go-stats { grid-template-columns: repeat(2, 1fr); gap: 16px; }
+    .diff-btn { padding: 10px 16px; font-size: 10px; }
   }
 </style>
 </head>
 <body>
 
 <canvas id="game-canvas"></canvas>
+
+<button class="sound-toggle" id="sound-toggle" title="Toggle sound">♪</button>
 
 <div id="input-wrap" class="hidden">
   <input id="type-input" type="text" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" placeholder="type to destroy...">
@@ -259,7 +363,12 @@
   <h1>GLYPHFALL</h1>
   <p class="sub">Words descend through the void. Type them before they breach the threshold.<br>Precise text measurement powered by <em>Pretext</em>.</p>
   <p class="sub" style="font-size:11px;opacity:0.5;margin-bottom:20px;">Best experience on desktop with a keyboard</p>
-<div id="hi-scores" class="hi-scores hidden"></div>
+  <div class="difficulty-selector" id="difficulty-selector">
+    <button class="diff-btn" data-diff="easy">Easy</button>
+    <button class="diff-btn active" data-diff="normal">Normal</button>
+    <button class="diff-btn" data-diff="hard">Hard</button>
+  </div>
+  <div id="hi-scores" class="hi-scores hidden"></div>
   <button class="start-btn" id="start-btn">INITIALIZE</button>
 </div>
 
@@ -288,7 +397,10 @@
       <div class="go-stat-label">Accuracy</div>
     </div>
   </div>
-  <button class="start-btn" id="restart-btn">REINITIALIZE</button>
+  <div class="go-buttons">
+    <button class="share-btn" id="share-btn">SHARE</button>
+    <button class="start-btn" id="restart-btn">REINITIALIZE</button>
+  </div>
 </div>
 
 <!-- PAUSE SCREEN -->
@@ -296,6 +408,8 @@
   <h1>PAUSED</h1>
   <p class="sub">Press <em>ESC</em> to resume</p>
 </div>
+
+<div class="share-toast" id="share-toast">Copied to clipboard!</div>
 
 <script type="module" src="./main.ts"></script>
 <!-- Cloudflare Web Analytics --><script defer src='https://static.cloudflareinsights.com/beacon.min.js' data-cf-beacon='{"token": "a690a4ba85654e08bb2c4b4462efc28d"}'></script><!-- End Cloudflare Web Analytics -->

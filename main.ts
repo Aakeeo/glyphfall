@@ -28,9 +28,10 @@ const WORDS_HARD = [
   'hologram', 'spectrum', 'quantize', 'sequence', 'compiler',
 ]
 
-type Difficulty = 'easy' | 'medium' | 'hard'
+type WordDifficulty = 'easy' | 'medium' | 'hard'
+type GameMode = 'easy' | 'normal' | 'hard'
 
-function pickWord(difficulty: Difficulty): string {
+function pickWord(difficulty: WordDifficulty): string {
   const pool =
     difficulty === 'easy' ? WORDS_EASY :
     difficulty === 'medium' ? WORDS_MEDIUM :
@@ -38,12 +39,33 @@ function pickWord(difficulty: Difficulty): string {
   return pool[Math.floor(Math.random() * pool.length)]
 }
 
-function getDifficulty(elapsed: number): Difficulty {
+function getDifficulty(elapsed: number, mode: GameMode): WordDifficulty {
   const r = Math.random()
+
+  if (mode === 'easy') {
+    if (elapsed < 20000) return 'easy'
+    if (elapsed < 50000) return r < 0.6 ? 'easy' : 'medium'
+    return r < 0.3 ? 'easy' : r < 0.8 ? 'medium' : 'hard'
+  }
+
+  if (mode === 'hard') {
+    if (elapsed < 10000) return r < 0.3 ? 'medium' : 'hard'
+    return r < 0.15 ? 'medium' : 'hard'
+  }
+
+  // normal
   if (elapsed < 15000) return r < 0.7 ? 'easy' : 'medium'
   if (elapsed < 35000) return r < 0.3 ? 'easy' : r < 0.7 ? 'medium' : 'hard'
   if (elapsed < 60000) return r < 0.1 ? 'easy' : r < 0.45 ? 'medium' : 'hard'
   return r < 0.3 ? 'medium' : 'hard'
+}
+
+// ── Difficulty mode speed/spawn tuning ───────────────────────────
+
+function getSpeedForMode(mode: GameMode): { baseSpeed: number; maxSpeed: number; baseSpawn: number; minSpawn: number } {
+  if (mode === 'easy') return { baseSpeed: 0.28, maxSpeed: 1.0, baseSpawn: 2800, minSpawn: 1000 }
+  if (mode === 'hard') return { baseSpeed: 0.55, maxSpeed: 2.2, baseSpawn: 1600, minSpawn: 400 }
+  return { baseSpeed: 0.4, maxSpeed: 1.8, baseSpawn: 2200, minSpawn: 600 }
 }
 
 // ── Colors & constants ───────────────────────────────────────────
@@ -61,14 +83,11 @@ const FONT_COMBO = '900 48px "Orbitron", sans-serif'
 const LINE_HEIGHT = 30
 const THRESHOLD_Y_RATIO = 0.88
 const MAX_LIVES = 3
-const BASE_SPAWN_INTERVAL = 2200
-const MIN_SPAWN_INTERVAL = 600
-const BASE_FALL_SPEED = 0.4
-const MAX_FALL_SPEED = 1.8
 
 // ── Sound engine (Web Audio API, synthesized) ────────────────────
 
 let audioCtx: AudioContext | null = null
+let soundEnabled = true
 
 function initAudio() {
   if (audioCtx) return
@@ -76,7 +95,7 @@ function initAudio() {
 }
 
 function playKeystroke() {
-  if (!audioCtx) return
+  if (!audioCtx || !soundEnabled) return
   const osc = audioCtx.createOscillator()
   const gain = audioCtx.createGain()
   osc.type = 'square'
@@ -89,7 +108,7 @@ function playKeystroke() {
 }
 
 function playWordComplete(currentCombo: number) {
-  if (!audioCtx) return
+  if (!audioCtx || !soundEnabled) return
   const baseFreq = 523 + currentCombo * 20
   const freq1 = Math.min(baseFreq, 1200)
   const freq2 = Math.min(baseFreq * 1.25, 1500)
@@ -109,7 +128,7 @@ function playWordComplete(currentCombo: number) {
 }
 
 function playBreachThud() {
-  if (!audioCtx) return
+  if (!audioCtx || !soundEnabled) return
   const osc = audioCtx.createOscillator()
   const gain = audioCtx.createGain()
   osc.type = 'sine'
@@ -121,7 +140,6 @@ function playBreachThud() {
   osc.start()
   osc.stop(audioCtx.currentTime + 0.3)
 
-  // Noise burst layer
   const bufSize = audioCtx.sampleRate * 0.1
   const buf = audioCtx.createBuffer(1, bufSize, audioCtx.sampleRate)
   const data = buf.getChannelData(0)
@@ -140,8 +158,8 @@ function playBreachThud() {
 }
 
 function playComboMilestone(tier: number) {
-  if (!audioCtx) return
-  const baseNote = tier >= 15 ? 784 : tier >= 10 ? 659 : 523 // G5, E5, C5
+  if (!audioCtx || !soundEnabled) return
+  const baseNote = tier >= 15 ? 784 : tier >= 10 ? 659 : 523
   const notes = [baseNote, baseNote * 1.26, baseNote * 1.5]
   for (let i = 0; i < 3; i++) {
     const osc = audioCtx.createOscillator()
@@ -156,6 +174,29 @@ function playComboMilestone(tier: number) {
     osc.stop(t + 0.1)
   }
 }
+
+// ── Sound toggle ─────────────────────────────────────────────────
+
+const soundToggleBtn = document.getElementById('sound-toggle') as HTMLButtonElement
+
+function updateSoundToggleUI() {
+  soundToggleBtn.textContent = soundEnabled ? '♪' : '♪'
+  soundToggleBtn.classList.toggle('muted', !soundEnabled)
+  soundToggleBtn.title = soundEnabled ? 'Mute sound' : 'Unmute sound'
+}
+
+soundToggleBtn.addEventListener('click', () => {
+  soundEnabled = !soundEnabled
+  updateSoundToggleUI()
+  try { localStorage.setItem('glyphfall-sound', soundEnabled ? '1' : '0') } catch {}
+})
+
+// Load saved preference
+try {
+  const saved = localStorage.getItem('glyphfall-sound')
+  if (saved === '0') soundEnabled = false
+} catch {}
+updateSoundToggleUI()
 
 // ── High score persistence ───────────────────────────────────────
 
@@ -175,7 +216,7 @@ function loadHighScores() {
       hiBestCombo = data.combo || 0
       hiBestWPM = data.wpm || 0
     }
-  } catch { /* ignore */ }
+  } catch {}
   updateStartScreenHighScores()
 }
 
@@ -192,7 +233,7 @@ function saveHighScores(currentScore: number, currentCombo: number, currentWPM: 
     localStorage.setItem('glyphfall-hiscore', JSON.stringify({
       score: hiBestScore, combo: hiBestCombo, wpm: hiBestWPM,
     }))
-  } catch { /* ignore */ }
+  } catch {}
 }
 
 function updateStartScreenHighScores() {
@@ -347,7 +388,7 @@ type FallingWord = {
   active: boolean
   flash: number
   entryAnim: number
-  difficulty: Difficulty
+  difficulty: WordDifficulty
   pointValue: number
 }
 
@@ -356,6 +397,7 @@ type FallingWord = {
 type GameState = 'menu' | 'playing' | 'paused' | 'gameover'
 
 let state: GameState = 'menu'
+let gameMode: GameMode = 'normal'
 let score = 0
 let combo = 0
 let bestCombo = 0
@@ -364,7 +406,7 @@ let lives = MAX_LIVES
 let wordsCompleted = 0
 let startTime = 0
 let lastSpawn = 0
-let spawnInterval = BASE_SPAWN_INTERVAL
+let spawnInterval = 2200
 let comboFlash = 0
 let screenShake = 0
 let screenShakeX = 0
@@ -374,6 +416,11 @@ let pauseTime = 0
 let totalKeystrokes = 0
 let wrongKeystrokes = 0
 let prevInputLength = 0
+let lastGameScore = 0
+let lastGameWPM = 0
+let lastGameCombo = 0
+let lastGameAccuracy = 100
+let lastGameSurvivedSecs = 0
 const fallingWords: FallingWord[] = []
 
 // ── DOM refs ─────────────────────────────────────────────────────
@@ -387,6 +434,8 @@ const gameoverScreen = document.getElementById('gameover-screen') as HTMLDivElem
 const pauseScreen = document.getElementById('pause-screen') as HTMLDivElement
 const startBtn = document.getElementById('start-btn') as HTMLButtonElement
 const restartBtn = document.getElementById('restart-btn') as HTMLButtonElement
+const shareBtn = document.getElementById('share-btn') as HTMLButtonElement
+const shareToast = document.getElementById('share-toast') as HTMLDivElement
 
 // ── Canvas sizing ────────────────────────────────────────────────
 
@@ -394,7 +443,6 @@ let W = 0, H = 0, dpr = 1
 const isMobile = 'ontouchstart' in window || navigator.maxTouchPoints > 0
 
 function getVisibleHeight(): number {
-  // visualViewport gives us the area NOT covered by the virtual keyboard
   if (window.visualViewport) return window.visualViewport.height
   return window.innerHeight
 }
@@ -430,9 +478,8 @@ function measureWord(text: string): { width: number; height: number; prepared: P
 
 function spawnWord() {
   const elapsed = performance.now() - startTime
-  const difficulty = getDifficulty(elapsed)
+  const difficulty = getDifficulty(elapsed, gameMode)
 
-  // No duplicate words on screen
   const onScreen = new Set(fallingWords.map(w => w.text))
   let text = pickWord(difficulty)
   let attempts = 0
@@ -447,8 +494,9 @@ function spawnWord() {
   const margin = 60
   const x = margin + Math.random() * (W - width - margin * 2)
 
+  const { baseSpeed, maxSpeed } = getSpeedForMode(gameMode)
   const speedRamp = Math.min(1, elapsed / 120000)
-  const speed = BASE_FALL_SPEED + speedRamp * (MAX_FALL_SPEED - BASE_FALL_SPEED) + (Math.random() - 0.5) * 0.3
+  const speed = baseSpeed + speedRamp * (maxSpeed - baseSpeed) + (Math.random() - 0.5) * 0.3
 
   const pointValue =
     difficulty === 'easy' ? 10 :
@@ -481,7 +529,6 @@ function onInput() {
     playKeystroke()
   }
 
-  // Find the best matching word (prefer lowest / most urgent)
   let bestMatch: FallingWord | null = null
   let bestY = -Infinity
 
@@ -495,7 +542,6 @@ function onInput() {
     }
   }
 
-  // Deactivate all, activate best
   for (const w of fallingWords) w.active = false
 
   if (bestMatch) {
@@ -522,13 +568,11 @@ function completeWord(w: FallingWord) {
   wordsCompleted++
   comboFlash = 1
 
-  // Sound
   playWordComplete(combo)
   if (combo === 5 || combo === 10 || combo === 15) {
     playComboMilestone(combo)
   }
 
-  // Score popup
   scorePopups.push({
     text: `+${points}`,
     x: w.x + w.width / 2,
@@ -537,7 +581,6 @@ function completeWord(w: FallingWord) {
     color: combo >= 10 ? AMBER : combo >= 5 ? LIME : CYAN,
   })
 
-  // Particles
   const cx = w.x + w.width / 2
   const cy = w.y + w.height / 2
   const color = combo >= 10 ? AMBER : combo >= 5 ? LIME : CYAN
@@ -565,6 +608,46 @@ function breachWord(w: FallingWord) {
   }
 }
 
+// ── Share score card ─────────────────────────────────────────────
+
+function buildScoreCard(): string {
+  const bar = (val: number, max: number, len: number) => {
+    const filled = Math.round((Math.min(val, max) / max) * len)
+    return '█'.repeat(filled) + '░'.repeat(len - filled)
+  }
+
+  const modeLabel = gameMode === 'easy' ? 'Easy' : gameMode === 'hard' ? 'Hard' : 'Normal'
+
+  return [
+    `GLYPHFALL ⚡ ${lastGameScore.toLocaleString()} pts`,
+    `${bar(lastGameWPM, 100, 12)} ${lastGameWPM} WPM`,
+    `🔥 Best combo: ${lastGameCombo}x`,
+    `⌨️ Accuracy: ${lastGameAccuracy}%`,
+    `⏱️ Survived: ${lastGameSurvivedSecs}s`,
+    `📊 Mode: ${modeLabel}`,
+    ``,
+    `https://aakeeo.github.io/glyphfall/`,
+  ].join('\n')
+}
+
+shareBtn.addEventListener('click', async () => {
+  const text = buildScoreCard()
+
+  // Try native share on mobile, clipboard on desktop
+  if (isMobile && navigator.share) {
+    try {
+      await navigator.share({ text })
+      return
+    } catch {}
+  }
+
+  try {
+    await navigator.clipboard.writeText(text)
+    shareToast.classList.add('show')
+    setTimeout(() => shareToast.classList.remove('show'), 2000)
+  } catch {}
+})
+
 // ── Game flow ────────────────────────────────────────────────────
 
 function startGame() {
@@ -578,7 +661,8 @@ function startGame() {
   wordsCompleted = 0
   startTime = performance.now()
   lastSpawn = performance.now()
-  spawnInterval = BASE_SPAWN_INTERVAL
+  const { baseSpawn } = getSpeedForMode(gameMode)
+  spawnInterval = baseSpawn
   comboFlash = 0
   screenShake = 0
   breachFlash = 0
@@ -610,6 +694,13 @@ function gameOver() {
     ? Math.round(((totalKeystrokes - wrongKeystrokes) / totalKeystrokes) * 100)
     : 100
 
+  // Store for share card
+  lastGameScore = score
+  lastGameWPM = wpm
+  lastGameCombo = bestCombo
+  lastGameAccuracy = accuracy
+  lastGameSurvivedSecs = Math.round(elapsed)
+
   saveHighScores(score, bestCombo, wpm)
 
   document.getElementById('go-score')!.textContent = String(score)
@@ -617,7 +708,6 @@ function gameOver() {
   document.getElementById('go-combo')!.textContent = String(bestCombo)
   document.getElementById('go-accuracy')!.textContent = accuracy + '%'
 
-  // NEW BEST badges
   const toggleBest = (id: string, isNew: boolean) => {
     const el = document.getElementById(id)
     if (el) el.classList.toggle('hidden', !isNew)
@@ -631,13 +721,23 @@ function gameOver() {
   }, 800)
 }
 
+// ── Difficulty selector ──────────────────────────────────────────
+
+const diffBtns = document.querySelectorAll('.diff-btn')
+diffBtns.forEach(btn => {
+  btn.addEventListener('click', () => {
+    diffBtns.forEach(b => b.classList.remove('active'))
+    btn.classList.add('active')
+    gameMode = (btn as HTMLElement).dataset.diff as GameMode
+  })
+})
+
 startBtn.addEventListener('click', startGame)
 restartBtn.addEventListener('click', startGame)
 input.addEventListener('input', onInput)
 
 // Keyboard handling
 document.addEventListener('keydown', (e) => {
-  // Pause toggle
   if (e.key === 'Escape' && (state === 'playing' || state === 'paused')) {
     e.preventDefault()
     if (state === 'playing') {
@@ -773,7 +873,6 @@ function drawHUD(ctx: CanvasRenderingContext2D, time: number) {
   ctx.fillText('LIVES', W - 24, 48)
   ctx.textAlign = 'left'
 
-  // WPM + COMBO
   const cx = W / 2
   ctx.textAlign = 'center'
 
@@ -815,7 +914,6 @@ function drawWord(ctx: CanvasRenderingContext2D, w: FallingWord, time: number) {
   const alpha = Math.min(1, w.entryAnim * 3)
   if (alpha <= 0) return
 
-  // Urgency: how close to threshold (0 = safe, 1 = at threshold)
   const thresholdY = H * THRESHOLD_Y_RATIO
   const urgency = Math.max(0, Math.min(1, (w.y - thresholdY * 0.4) / (thresholdY * 0.6)))
 
@@ -828,7 +926,6 @@ function drawWord(ctx: CanvasRenderingContext2D, w: FallingWord, time: number) {
   const boxW = w.width + pad * 2
   const boxH = w.height + pad * 2
 
-  // Background box — border shifts with urgency
   ctx.fillStyle = w.active
     ? 'rgba(0, 240, 255, 0.06)'
     : 'rgba(10, 13, 20, 0.7)'
@@ -852,7 +949,6 @@ function drawWord(ctx: CanvasRenderingContext2D, w: FallingWord, time: number) {
   ctx.fill()
   ctx.stroke()
 
-  // Text
   const baselineY = w.y + 18
 
   if (w.matched > 0) {
@@ -878,7 +974,6 @@ function drawWord(ctx: CanvasRenderingContext2D, w: FallingWord, time: number) {
     ctx.shadowBlur = 0
   }
 
-  // Difficulty dot
   const dotColor =
     w.difficulty === 'easy' ? 'rgba(255,255,255,0.2)' :
     w.difficulty === 'medium' ? CYAN : AMBER
@@ -896,16 +991,10 @@ function getUrgencyColor(urgency: number, time: number, x: number): string {
   }
   if (urgency < 0.8) {
     const t = (urgency - 0.5) / 0.3
-    const r = 255
-    const g = Math.round(255 - t * 71)
-    const b = Math.round(255 - t * 255)
-    return `rgba(${r}, ${g}, ${b}, 0.8)`
+    return `rgba(255, ${Math.round(255 - t * 71)}, ${Math.round(255 - t * 255)}, 0.8)`
   }
   const t = (urgency - 0.8) / 0.2
-  const r = 255
-  const g = Math.round(184 - t * 139)
-  const b = Math.round(t * 120)
-  return `rgba(${r}, ${g}, ${b}, 0.9)`
+  return `rgba(255, ${Math.round(184 - t * 139)}, ${Math.round(t * 120)}, 0.9)`
 }
 
 // ── Combo burst ──────────────────────────────────────────────────
@@ -949,8 +1038,6 @@ function drawComboBurst(ctx: CanvasRenderingContext2D) {
   ctx.textBaseline = 'alphabetic'
 }
 
-// ── Breach flash ─────────────────────────────────────────────────
-
 function drawBreachFlash(ctx: CanvasRenderingContext2D) {
   if (breachFlash <= 0) return
   ctx.save()
@@ -958,8 +1045,6 @@ function drawBreachFlash(ctx: CanvasRenderingContext2D) {
   ctx.fillRect(0, 0, W, H)
   ctx.restore()
 }
-
-// ── Background atmosphere ────────────────────────────────────────
 
 function drawAtmosphere(ctx: CanvasRenderingContext2D, time: number) {
   const t = time * 0.0002
@@ -981,8 +1066,6 @@ function drawAtmosphere(ctx: CanvasRenderingContext2D, time: number) {
   ctx.fillStyle = grad2
   ctx.fillRect(0, 0, W, H)
 }
-
-// ── Menu background ──────────────────────────────────────────────
 
 function drawMenuBg(ctx: CanvasRenderingContext2D, time: number) {
   ctx.fillStyle = VOID
@@ -1012,14 +1095,11 @@ function frame(time: number) {
 
   resize()
 
-  // Menu / gameover / paused — just draw background
   if (state === 'menu' || state === 'gameover' || state === 'paused') {
     drawMenuBg(ctx, time)
     requestAnimationFrame(frame)
     return
   }
-
-  // ── PLAYING STATE ──
 
   // Screen shake
   if (screenShake > 0) {
@@ -1031,20 +1111,19 @@ function frame(time: number) {
     screenShakeY = 0
   }
 
-  // Timers
   comboFlash = Math.max(0, comboFlash - dt * 2)
   breachFlash = Math.max(0, breachFlash - dt * 3)
 
   // Spawning
   const elapsed = time - startTime
-  spawnInterval = Math.max(MIN_SPAWN_INTERVAL, BASE_SPAWN_INTERVAL - elapsed * 0.012)
+  const { baseSpawn, minSpawn } = getSpeedForMode(gameMode)
+  spawnInterval = Math.max(minSpawn, baseSpawn - elapsed * 0.012)
 
   if (time - lastSpawn > spawnInterval && fallingWords.length < 12) {
     spawnWord()
     lastSpawn = time
   }
 
-  // Update falling words
   const thresholdY = H * THRESHOLD_Y_RATIO
   for (let i = fallingWords.length - 1; i >= 0; i--) {
     const w = fallingWords[i]
@@ -1057,12 +1136,10 @@ function frame(time: number) {
     }
   }
 
-  // Update particles & popups
   updateParticles(dt)
   updateScorePopups(dt)
 
-  // ── DRAW ──
-
+  // Draw
   ctx.save()
   ctx.translate(screenShakeX, screenShakeY)
 
@@ -1090,7 +1167,6 @@ function frame(time: number) {
 
 // ── Boot ─────────────────────────────────────────────────────────
 
-// Mobile: move input to top so virtual keyboard doesn't cover game area
 if (isMobile) {
   inputWrap.classList.add('input-top')
 }

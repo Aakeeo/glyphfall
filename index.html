@@ -1,0 +1,301 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>GLYPHFALL</title>
+<meta name="description" content="A cyberpunk typing game. Words descend through the void — type them before they breach the threshold.">
+<meta property="og:title" content="GLYPHFALL">
+<meta property="og:description" content="A cyberpunk typing game. Words descend through the void — type them before they breach the threshold.">
+<meta property="og:type" content="website">
+<meta name="twitter:card" content="summary_large_image">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><rect fill='%2305060a' width='100' height='100' rx='16'/><text x='50' y='72' font-size='60' text-anchor='middle' fill='%2300f0ff' font-family='monospace' font-weight='900'>G</text></svg>">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;500;700;900&family=Fira+Code:wght@300;400;500&display=swap" rel="stylesheet">
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  :root {
+    --void: #05060a;
+    --surface: #0a0d14;
+    --cyan: #00f0ff;
+    --magenta: #ff2d78;
+    --amber: #ffb800;
+    --lime: #39ff14;
+    --ghost: rgba(0, 240, 255, 0.06);
+    --glow-cyan: 0 0 20px rgba(0, 240, 255, 0.4), 0 0 60px rgba(0, 240, 255, 0.15);
+    --glow-magenta: 0 0 20px rgba(255, 45, 120, 0.4), 0 0 60px rgba(255, 45, 120, 0.15);
+    --mono: 'Fira Code', 'SF Mono', 'Cascadia Code', monospace;
+    --display: 'Orbitron', 'Eurostile', sans-serif;
+  }
+
+  html, body {
+    height: 100%;
+    overflow: hidden;
+    background: var(--void);
+    color: #fff;
+    font-family: var(--mono);
+    cursor: default;
+    user-select: none;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  /* ── CRT / SCANLINE OVERLAY ── */
+  body::after {
+    content: '';
+    position: fixed;
+    inset: 0;
+    background: repeating-linear-gradient(
+      0deg,
+      transparent,
+      transparent 2px,
+      rgba(0, 0, 0, 0.08) 2px,
+      rgba(0, 0, 0, 0.08) 4px
+    );
+    pointer-events: none;
+    z-index: 9999;
+  }
+
+  /* ── VIGNETTE ── */
+  body::before {
+    content: '';
+    position: fixed;
+    inset: 0;
+    background: radial-gradient(ellipse at center, transparent 50%, rgba(5,6,10,0.7) 100%);
+    pointer-events: none;
+    z-index: 9998;
+  }
+
+  #game-canvas {
+    position: fixed;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    display: block;
+  }
+
+  /* ── INPUT FIELD ── */
+  #input-wrap {
+    position: fixed;
+    bottom: 32px;
+    left: 50%;
+    transform: translateX(-50%);
+    z-index: 100;
+    width: min(560px, calc(100vw - 48px));
+  }
+
+  #input-wrap::before {
+    content: '>';
+    position: absolute;
+    left: 16px;
+    top: 50%;
+    transform: translateY(-50%);
+    font: 500 16px/1 var(--mono);
+    color: var(--cyan);
+    text-shadow: var(--glow-cyan);
+    pointer-events: none;
+    z-index: 2;
+  }
+
+  #type-input {
+    width: 100%;
+    padding: 14px 20px 14px 36px;
+    background: rgba(10, 13, 20, 0.85);
+    border: 1px solid rgba(0, 240, 255, 0.25);
+    border-radius: 8px;
+    color: #fff;
+    font: 400 16px/1.4 var(--mono);
+    outline: none;
+    backdrop-filter: blur(16px);
+    box-shadow:
+      0 0 1px rgba(0, 240, 255, 0.5),
+      0 4px 24px rgba(0, 0, 0, 0.5),
+      inset 0 1px 0 rgba(255, 255, 255, 0.04);
+    transition: border-color 0.2s, box-shadow 0.2s;
+    caret-color: var(--cyan);
+  }
+
+  #type-input:focus {
+    border-color: rgba(0, 240, 255, 0.5);
+    box-shadow:
+      0 0 8px rgba(0, 240, 255, 0.3),
+      0 4px 24px rgba(0, 0, 0, 0.5),
+      inset 0 1px 0 rgba(255, 255, 255, 0.04);
+  }
+
+  #type-input::placeholder {
+    color: rgba(0, 240, 255, 0.3);
+    font-style: italic;
+  }
+
+  .hidden { display: none !important; }
+
+  /* ── OVERLAYS ── */
+  .overlay {
+    position: fixed;
+    inset: 0;
+    z-index: 200;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    background: rgba(5, 6, 10, 0.92);
+    backdrop-filter: blur(8px);
+  }
+
+  .overlay h1 {
+    font: 900 clamp(48px, 10vw, 88px)/1 var(--display);
+    letter-spacing: 0.08em;
+    color: var(--cyan);
+    text-shadow: var(--glow-cyan);
+    margin-bottom: 12px;
+  }
+
+  .overlay .sub {
+    font: 300 clamp(13px, 2vw, 16px)/1.6 var(--mono);
+    color: rgba(255, 255, 255, 0.4);
+    text-align: center;
+    max-width: 44ch;
+    margin-bottom: 16px;
+  }
+
+  .overlay .sub em {
+    color: var(--cyan);
+    font-style: normal;
+  }
+
+  .start-btn {
+    padding: 14px 48px;
+    background: transparent;
+    border: 1px solid var(--cyan);
+    border-radius: 6px;
+    color: var(--cyan);
+    font: 500 14px/1 var(--display);
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    cursor: pointer;
+    transition: all 0.25s;
+    text-shadow: var(--glow-cyan);
+    box-shadow: 0 0 12px rgba(0, 240, 255, 0.15);
+  }
+  .start-btn:hover {
+    background: rgba(0, 240, 255, 0.08);
+    box-shadow: var(--glow-cyan);
+    transform: translateY(-1px);
+  }
+
+  /* ── HIGH SCORES ── */
+  .hi-scores {
+    font: 400 12px/1 var(--mono);
+    color: rgba(255, 255, 255, 0.2);
+    margin-bottom: 24px;
+    text-align: center;
+    letter-spacing: 0.04em;
+  }
+
+  /* ── MOBILE NOTICE ── */
+  .mobile-notice {
+    font: 400 12px/1.4 var(--mono);
+    color: var(--amber);
+    opacity: 0.7;
+    margin-bottom: 16px;
+    text-align: center;
+  }
+
+  /* ── GAME OVER STATS ── */
+  .go-stats {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 24px;
+    margin: 32px 0;
+    text-align: center;
+  }
+  .go-stat-val {
+    font: 700 clamp(28px, 5vw, 42px)/1 var(--display);
+    color: var(--cyan);
+    text-shadow: var(--glow-cyan);
+  }
+  .go-stat-label {
+    font: 400 11px/1 var(--mono);
+    color: rgba(255,255,255,0.35);
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    margin-top: 8px;
+  }
+  .go-stat-val.magenta { color: var(--magenta); text-shadow: var(--glow-magenta); }
+
+  /* ── NEW BEST BADGE ── */
+  .new-best {
+    display: inline-block;
+    margin-top: 6px;
+    font: 700 10px/1 var(--display);
+    color: var(--amber);
+    letter-spacing: 0.1em;
+    animation: flashBest 0.6s ease infinite alternate;
+  }
+  @keyframes flashBest {
+    from { opacity: 0.5; }
+    to { opacity: 1; text-shadow: 0 0 12px var(--amber); }
+  }
+
+  /* ── PAUSE OVERLAY ── */
+  #pause-screen .sub {
+    margin-bottom: 0;
+  }
+</style>
+</head>
+<body>
+
+<canvas id="game-canvas"></canvas>
+
+<div id="input-wrap" class="hidden">
+  <input id="type-input" type="text" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" placeholder="type to destroy...">
+</div>
+
+<!-- START SCREEN -->
+<div class="overlay" id="start-screen">
+  <h1>GLYPHFALL</h1>
+  <p class="sub">Words descend through the void. Type them before they breach the threshold.<br>Precise text measurement powered by <em>Pretext</em>.</p>
+  <p id="mobile-notice" class="mobile-notice hidden">Best played on desktop with a keyboard</p>
+  <div id="hi-scores" class="hi-scores hidden"></div>
+  <button class="start-btn" id="start-btn">INITIALIZE</button>
+</div>
+
+<!-- GAME OVER SCREEN -->
+<div class="overlay hidden" id="gameover-screen">
+  <h1>BREACH</h1>
+  <p class="sub">The threshold was broken. Your defense has fallen.</p>
+  <div class="go-stats">
+    <div>
+      <div class="go-stat-val" id="go-score">0</div>
+      <div class="go-stat-label">Score</div>
+      <div class="new-best hidden" id="nb-score">NEW BEST</div>
+    </div>
+    <div>
+      <div class="go-stat-val" id="go-wpm">0</div>
+      <div class="go-stat-label">WPM</div>
+      <div class="new-best hidden" id="nb-wpm">NEW BEST</div>
+    </div>
+    <div>
+      <div class="go-stat-val magenta" id="go-combo">0</div>
+      <div class="go-stat-label">Best Combo</div>
+      <div class="new-best hidden" id="nb-combo">NEW BEST</div>
+    </div>
+    <div>
+      <div class="go-stat-val" id="go-accuracy">0%</div>
+      <div class="go-stat-label">Accuracy</div>
+    </div>
+  </div>
+  <button class="start-btn" id="restart-btn">REINITIALIZE</button>
+</div>
+
+<!-- PAUSE SCREEN -->
+<div class="overlay hidden" id="pause-screen">
+  <h1>PAUSED</h1>
+  <p class="sub">Press <em>ESC</em> to resume</p>
+</div>
+
+<script type="module" src="./main.ts"></script>
+</body>
+</html>

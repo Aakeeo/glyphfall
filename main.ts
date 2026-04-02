@@ -391,11 +391,18 @@ const restartBtn = document.getElementById('restart-btn') as HTMLButtonElement
 // ── Canvas sizing ────────────────────────────────────────────────
 
 let W = 0, H = 0, dpr = 1
+const isMobile = 'ontouchstart' in window || navigator.maxTouchPoints > 0
+
+function getVisibleHeight(): number {
+  // visualViewport gives us the area NOT covered by the virtual keyboard
+  if (window.visualViewport) return window.visualViewport.height
+  return window.innerHeight
+}
 
 function resize() {
   dpr = window.devicePixelRatio || 1
   W = window.innerWidth
-  H = window.innerHeight
+  H = getVisibleHeight()
   canvas.width = Math.round(W * dpr)
   canvas.height = Math.round(H * dpr)
   canvas.style.width = `${W}px`
@@ -404,6 +411,9 @@ function resize() {
 }
 
 window.addEventListener('resize', resize)
+if (window.visualViewport) {
+  window.visualViewport.addEventListener('resize', resize)
+}
 resize()
 
 // ── Pretext measurement ──────────────────────────────────────────
@@ -1080,10 +1090,9 @@ function frame(time: number) {
 
 // ── Boot ─────────────────────────────────────────────────────────
 
-// Mobile detection
-const isTouchDevice = 'ontouchstart' in window || navigator.maxTouchPoints > 0
-if (isTouchDevice) {
-  document.getElementById('mobile-notice')?.classList.remove('hidden')
+// Mobile: move input to top so virtual keyboard doesn't cover game area
+if (isMobile) {
+  inputWrap.classList.add('input-top')
 }
 
 loadHighScores()

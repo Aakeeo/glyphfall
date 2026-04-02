@@ -39,6 +39,8 @@
     cursor: default;
     user-select: none;
     -webkit-font-smoothing: antialiased;
+    overscroll-behavior: none;
+    touch-action: none;
   }
 
   /* ── CRT / SCANLINE OVERLAY ── */
@@ -85,6 +87,11 @@
     width: min(560px, calc(100vw - 48px));
   }
 
+  #input-wrap.input-top {
+    bottom: auto;
+    top: 8px;
+  }
+
   #input-wrap::before {
     content: '>';
     position: absolute;
@@ -114,6 +121,7 @@
       inset 0 1px 0 rgba(255, 255, 255, 0.04);
     transition: border-color 0.2s, box-shadow 0.2s;
     caret-color: var(--cyan);
+    touch-action: manipulation;
   }
 
   #type-input:focus {
@@ -167,6 +175,7 @@
 
   .start-btn {
     padding: 14px 48px;
+    touch-action: manipulation;
     background: transparent;
     border: 1px solid var(--cyan);
     border-radius: 6px;
@@ -192,15 +201,6 @@
     margin-bottom: 24px;
     text-align: center;
     letter-spacing: 0.04em;
-  }
-
-  /* ── MOBILE NOTICE ── */
-  .mobile-notice {
-    font: 400 12px/1.4 var(--mono);
-    color: var(--amber);
-    opacity: 0.7;
-    margin-bottom: 16px;
-    text-align: center;
   }
 
   /* ── GAME OVER STATS ── */
@@ -257,8 +257,7 @@
 <div class="overlay" id="start-screen">
   <h1>GLYPHFALL</h1>
   <p class="sub">Words descend through the void. Type them before they breach the threshold.<br>Precise text measurement powered by <em>Pretext</em>.</p>
-  <p id="mobile-notice" class="mobile-notice hidden">Best played on desktop with a keyboard</p>
-  <div id="hi-scores" class="hi-scores hidden"></div>
+<div id="hi-scores" class="hi-scores hidden"></div>
   <button class="start-btn" id="start-btn">INITIALIZE</button>
 </div>
 

@@ -4,6 +4,14 @@ import { prepare, layout, type PreparedText } from '@chenglou/pretext'
 // GLYPHFALL — A cyberpunk typing game powered by Pretext
 // ═══════════════════════════════════════════════════════════════════
 
+// ── Analytics ────────────────────────────────────────────────────
+
+declare function gtag(...args: unknown[]): void
+
+function trackEvent(name: string, params?: Record<string, string | number>) {
+  try { gtag('event', name, params) } catch {}
+}
+
 // ── Word corpus ──────────────────────────────────────────────────
 
 const WORDS_EASY = [
@@ -691,10 +699,16 @@ function completeWord(w: FallingWord) {
   // Frenzy mode activation
   const wasFrenzy = frenzyActive
   frenzyActive = combo >= 12
-  if (frenzyActive && !wasFrenzy) frenzyGlow = 1
+  if (frenzyActive && !wasFrenzy) {
+    frenzyGlow = 1
+    trackEvent('frenzy_reached', { combo })
+  }
 
   // Activate power word effect
-  if (w.power) activatePower(w.power)
+  if (w.power) {
+    trackEvent('power_word', { type: w.power })
+    activatePower(w.power)
+  }
 
   playWordComplete(combo)
   if (combo === 4 || combo === 8 || combo === 12) {
@@ -770,6 +784,7 @@ function buildScoreCard(): string {
 }
 
 shareBtn.addEventListener('click', async () => {
+  trackEvent('share_click', { score: lastGameScore, difficulty: gameMode })
   const text = buildScoreCard()
 
   // Try native share on mobile, clipboard on desktop
@@ -826,6 +841,8 @@ function startGame() {
   pauseScreen.classList.add('hidden')
   inputWrap.classList.remove('hidden')
   input.focus()
+
+  trackEvent('game_start', { difficulty: gameMode })
 }
 
 function gameOver() {
@@ -875,6 +892,16 @@ function gameOver() {
   }
 
   lastRunScore = score
+
+  trackEvent('game_over', {
+    score,
+    wpm,
+    best_combo: bestCombo,
+    accuracy,
+    survived_seconds: Math.round(elapsed),
+    difficulty: gameMode,
+    is_new_best: newBestScore ? 1 : 0,
+  })
 
   const toggleBest = (id: string, isNew: boolean) => {
     const el = document.getElementById(id)

@@ -159,7 +159,7 @@ function playBreachThud() {
 
 function playComboMilestone(tier: number) {
   if (!audioCtx || !soundEnabled) return
-  const baseNote = tier >= 15 ? 784 : tier >= 10 ? 659 : 523
+  const baseNote = tier >= 12 ? 784 : tier >= 8 ? 659 : 523
   const notes = [baseNote, baseNote * 1.26, baseNote * 1.5]
   for (let i = 0; i < 3; i++) {
     const osc = audioCtx.createOscillator()
@@ -172,6 +172,57 @@ function playComboMilestone(tier: number) {
     osc.connect(gain).connect(audioCtx.destination)
     osc.start(t)
     osc.stop(t + 0.1)
+  }
+}
+
+function playComboBreak() {
+  if (!audioCtx || !soundEnabled) return
+  const osc = audioCtx.createOscillator()
+  const gain = audioCtx.createGain()
+  osc.type = 'sawtooth'
+  osc.frequency.setValueAtTime(200, audioCtx.currentTime)
+  osc.frequency.exponentialRampToValueAtTime(80, audioCtx.currentTime + 0.15)
+  gain.gain.setValueAtTime(0.08, audioCtx.currentTime)
+  gain.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + 0.15)
+  osc.connect(gain).connect(audioCtx.destination)
+  osc.start()
+  osc.stop(audioCtx.currentTime + 0.15)
+}
+
+let lastHeartbeatTime = 0
+function playHeartbeat(time: number) {
+  if (!audioCtx || !soundEnabled) return
+  if (time - lastHeartbeatTime < 600) return
+  lastHeartbeatTime = time
+  // Double-thump like a heartbeat
+  for (let i = 0; i < 2; i++) {
+    const osc = audioCtx.createOscillator()
+    const gain = audioCtx.createGain()
+    osc.type = 'sine'
+    osc.frequency.value = 40
+    const t = audioCtx.currentTime + i * 0.12
+    gain.gain.setValueAtTime(0.12, t)
+    gain.gain.exponentialRampToValueAtTime(0.001, t + 0.1)
+    osc.connect(gain).connect(audioCtx.destination)
+    osc.start(t)
+    osc.stop(t + 0.1)
+  }
+}
+
+function playPowerUp() {
+  if (!audioCtx || !soundEnabled) return
+  const notes = [523, 659, 784, 1047]
+  for (let i = 0; i < notes.length; i++) {
+    const osc = audioCtx.createOscillator()
+    const gain = audioCtx.createGain()
+    osc.type = 'sine'
+    osc.frequency.value = notes[i]
+    const t = audioCtx.currentTime + i * 0.06
+    gain.gain.setValueAtTime(0.1, t)
+    gain.gain.exponentialRampToValueAtTime(0.001, t + 0.12)
+    osc.connect(gain).connect(audioCtx.destination)
+    osc.start(t)
+    osc.stop(t + 0.12)
   }
 }
 
@@ -375,11 +426,14 @@ function drawScorePopups(ctx: CanvasRenderingContext2D) {
 
 // ── Falling word ─────────────────────────────────────────────────
 
+type PowerType = 'slow' | 'clear' | 'auto' | 'double' | null
+
 type FallingWord = {
   text: string
   x: number
   y: number
   speed: number
+  baseSpeed: number
   width: number
   height: number
   prepared: PreparedText
@@ -390,6 +444,7 @@ type FallingWord = {
   entryAnim: number
   difficulty: WordDifficulty
   pointValue: number
+  power: PowerType
 }
 
 // ── Game state ───────────────────────────────────────────────────
@@ -421,6 +476,12 @@ let lastGameWPM = 0
 let lastGameCombo = 0
 let lastGameAccuracy = 100
 let lastGameSurvivedSecs = 0
+let lastRunScore = 0
+let frenzyActive = false
+let frenzyGlow = 0
+let slowMoTimer = 0
+let doublePtsTimer = 0
+let autoNextWord = false
 const fallingWords: FallingWord[] = []
 
 // ── DOM refs ─────────────────────────────────────────────────────
@@ -476,38 +537,64 @@ function measureWord(text: string): { width: number; height: number; prepared: P
 
 // ── Spawn a word ─────────────────────────────────────────────────
 
+const POWER_WORDS: { text: string; power: PowerType }[] = [
+  { text: 'SLOW', power: 'slow' },
+  { text: 'CLEAR', power: 'clear' },
+  { text: 'AUTO', power: 'auto' },
+  { text: 'DOUBLE', power: 'double' },
+]
+
 function spawnWord() {
   const elapsed = performance.now() - startTime
   const difficulty = getDifficulty(elapsed, gameMode)
 
-  const onScreen = new Set(fallingWords.map(w => w.text))
-  let text = pickWord(difficulty)
-  let attempts = 0
-  while (onScreen.has(text) && attempts < 20) {
+  // ~7% chance of power word (after 10s, max 1 on screen)
+  const hasPowerOnScreen = fallingWords.some(w => w.power !== null)
+  const isPower = !hasPowerOnScreen && elapsed > 10000 && Math.random() < 0.07
+  let power: PowerType = null
+  let text: string
+
+  if (isPower) {
+    const pw = POWER_WORDS[Math.floor(Math.random() * POWER_WORDS.length)]
+    text = pw.text
+    power = pw.power
+  } else {
+    const onScreen = new Set(fallingWords.map(w => w.text))
     text = pickWord(difficulty)
-    attempts++
+    let attempts = 0
+    while (onScreen.has(text) && attempts < 20) {
+      text = pickWord(difficulty)
+      attempts++
+    }
+    if (onScreen.has(text)) return
   }
-  if (onScreen.has(text)) return
 
   const { width, height, prepared } = measureWord(text)
 
   const margin = 60
   const x = margin + Math.random() * (W - width - margin * 2)
 
-  const { baseSpeed, maxSpeed } = getSpeedForMode(gameMode)
+  const { baseSpeed: modeBaseSpeed, maxSpeed } = getSpeedForMode(gameMode)
   const speedRamp = Math.min(1, elapsed / 120000)
-  const speed = baseSpeed + speedRamp * (maxSpeed - baseSpeed) + (Math.random() - 0.5) * 0.3
+  let speed = modeBaseSpeed + speedRamp * (maxSpeed - modeBaseSpeed) + (Math.random() - 0.5) * 0.3
 
-  const pointValue =
+  // Performance-adaptive: high combo → faster, low performance → slower
+  if (combo >= 8) speed *= 1.15
+  else if (combo >= 4) speed *= 1.05
+
+  // Power words fall a bit slower (give player time to react)
+  if (isPower) speed *= 0.7
+
+  const pointValue = isPower ? 30 :
     difficulty === 'easy' ? 10 :
     difficulty === 'medium' ? 25 :
     50
 
   fallingWords.push({
     text, x, y: -height - 20,
-    speed, width, height, prepared, font: FONT_GAME,
+    speed, baseSpeed: speed, width, height, prepared, font: FONT_GAME,
     matched: 0, active: false, flash: 0,
-    entryAnim: 0, difficulty, pointValue,
+    entryAnim: 0, difficulty, pointValue, power,
   })
 }
 
@@ -559,41 +646,93 @@ function onInput() {
   }
 }
 
+function activatePower(power: PowerType) {
+  playPowerUp()
+  switch (power) {
+    case 'slow':
+      slowMoTimer = 3
+      break
+    case 'clear':
+      // Clear all non-power words
+      for (let i = fallingWords.length - 1; i >= 0; i--) {
+        const fw = fallingWords[i]
+        spawnParticles(fw.x + fw.width / 2, fw.y + fw.height / 2, CYAN, 8)
+        fallingWords.splice(i, 1)
+      }
+      break
+    case 'auto':
+      autoNextWord = true
+      break
+    case 'double':
+      doublePtsTimer = 5
+      break
+  }
+}
+
+function getComboMultiplier(): number {
+  if (combo >= 12) return 4 // FRENZY
+  if (combo >= 8) return 3
+  if (combo >= 4) return 2
+  return 1
+}
+
 function completeWord(w: FallingWord) {
+  const hadCombo = combo
+
   combo++
   if (combo > bestCombo) bestCombo = combo
-  multiplier = 1 + Math.floor(combo / 5) * 0.5
-  const points = Math.round(w.pointValue * multiplier)
+  multiplier = getComboMultiplier()
+  const doubleMult = doublePtsTimer > 0 ? 2 : 1
+  const points = Math.round(w.pointValue * multiplier * doubleMult)
   score += points
   wordsCompleted++
   comboFlash = 1
 
+  // Frenzy mode activation
+  const wasFrenzy = frenzyActive
+  frenzyActive = combo >= 12
+  if (frenzyActive && !wasFrenzy) frenzyGlow = 1
+
+  // Activate power word effect
+  if (w.power) activatePower(w.power)
+
   playWordComplete(combo)
-  if (combo === 5 || combo === 10 || combo === 15) {
+  if (combo === 4 || combo === 8 || combo === 12) {
     playComboMilestone(combo)
   }
 
+  const comboColor = frenzyActive ? MAGENTA : combo >= 8 ? AMBER : combo >= 4 ? LIME : CYAN
+
   scorePopups.push({
-    text: `+${points}`,
+    text: w.power ? w.power.toUpperCase() + '!' : `+${points}`,
     x: w.x + w.width / 2,
     y: w.y,
     life: 1.0,
-    color: combo >= 10 ? AMBER : combo >= 5 ? LIME : CYAN,
+    color: w.power ? AMBER : comboColor,
   })
 
   const cx = w.x + w.width / 2
   const cy = w.y + w.height / 2
-  const color = combo >= 10 ? AMBER : combo >= 5 ? LIME : CYAN
-  spawnParticles(cx, cy, color, 16 + combo * 2)
+  spawnParticles(cx, cy, comboColor, 16 + combo * 2)
 
   const idx = fallingWords.indexOf(w)
   if (idx >= 0) fallingWords.splice(idx, 1)
+
+  // AUTO power: instantly complete the next lowest word
+  if (autoNextWord && fallingWords.length > 0) {
+    autoNextWord = false
+    let lowest = fallingWords[0]
+    for (const fw of fallingWords) { if (fw.y > lowest.y) lowest = fw }
+    completeWord(lowest)
+  }
 }
 
 function breachWord(w: FallingWord) {
+  if (combo >= 4) playComboBreak()
   lives--
   combo = 0
   multiplier = 1
+  frenzyActive = false
   breachFlash = 1
   screenShake = 0.5
 
@@ -672,6 +811,11 @@ function startGame() {
   newBestScore = false
   newBestCombo = false
   newBestWPM = false
+  frenzyActive = false
+  frenzyGlow = 0
+  slowMoTimer = 0
+  doublePtsTimer = 0
+  autoNextWord = false
   fallingWords.length = 0
   particles.length = 0
   scorePopups.length = 0
@@ -707,6 +851,30 @@ function gameOver() {
   document.getElementById('go-wpm')!.textContent = String(wpm)
   document.getElementById('go-combo')!.textContent = String(bestCombo)
   document.getElementById('go-accuracy')!.textContent = accuracy + '%'
+
+  // Score delta — "one more try" psychology
+  const deltaEl = document.getElementById('go-delta')!
+  if (newBestScore) {
+    deltaEl.textContent = 'NEW RECORD!'
+    deltaEl.style.color = AMBER
+  } else if (hiBestScore > 0) {
+    const gap = hiBestScore - score
+    if (gap <= 50) {
+      deltaEl.textContent = `Just ${gap} away from your best!`
+      deltaEl.style.color = LIME
+    } else if (lastRunScore > 0) {
+      const diff = score - lastRunScore
+      deltaEl.textContent = diff >= 0 ? `+${diff} vs last run` : `${diff} vs last run`
+      deltaEl.style.color = diff >= 0 ? CYAN : MAGENTA
+    } else {
+      deltaEl.textContent = `${gap} away from your best`
+      deltaEl.style.color = 'rgba(255,255,255,0.4)'
+    }
+  } else {
+    deltaEl.textContent = ''
+  }
+
+  lastRunScore = score
 
   const toggleBest = (id: string, isNew: boolean) => {
     const el = document.getElementById(id)
@@ -884,7 +1052,7 @@ function drawHUD(ctx: CanvasRenderingContext2D, time: number) {
   ctx.fillText(String(wpm), cx - 60, 24)
 
   if (combo > 0) {
-    const comboColor = combo >= 10 ? AMBER : combo >= 5 ? LIME : CYAN
+    const comboColor = frenzyActive ? MAGENTA : combo >= 8 ? AMBER : combo >= 4 ? LIME : CYAN
     ctx.fillStyle = comboColor
     ctx.shadowColor = comboColor
     ctx.shadowBlur = comboFlash > 0 ? 20 : 8
@@ -974,7 +1142,20 @@ function drawWord(ctx: CanvasRenderingContext2D, w: FallingWord, time: number) {
     ctx.shadowBlur = 0
   }
 
+  // Power word glow effect
+  if (w.power) {
+    ctx.strokeStyle = AMBER
+    ctx.lineWidth = 2
+    ctx.shadowColor = AMBER
+    ctx.shadowBlur = 12 + Math.sin(time * 0.008) * 6
+    ctx.beginPath()
+    ctx.roundRect(boxX - 2, boxY - 2, boxW * entryScale + 4, boxH + 4, 6)
+    ctx.stroke()
+    ctx.shadowBlur = 0
+  }
+
   const dotColor =
+    w.power ? AMBER :
     w.difficulty === 'easy' ? 'rgba(255,255,255,0.2)' :
     w.difficulty === 'medium' ? CYAN : AMBER
   ctx.fillStyle = dotColor
@@ -1008,7 +1189,7 @@ function drawComboBurst(ctx: CanvasRenderingContext2D) {
   ctx.textAlign = 'center'
   ctx.textBaseline = 'middle'
 
-  const comboColor = combo >= 10 ? AMBER : combo >= 5 ? LIME : CYAN
+  const comboColor = frenzyActive ? MAGENTA : combo >= 8 ? AMBER : combo >= 4 ? LIME : CYAN
   ctx.fillStyle = comboColor
   ctx.shadowColor = comboColor
   ctx.shadowBlur = 30
@@ -1026,9 +1207,9 @@ function drawComboBurst(ctx: CanvasRenderingContext2D) {
   ctx.fillStyle = `rgba(255,255,255,${comboFlash * 0.5})`
   ctx.shadowBlur = 0
   ctx.fillText(
-    combo >= 15 ? 'UNSTOPPABLE' :
-    combo >= 10 ? 'GODLIKE' :
-    combo >= 5 ? 'ON FIRE' :
+    combo >= 12 ? 'F R E N Z Y' :
+    combo >= 8 ? 'UNSTOPPABLE' :
+    combo >= 4 ? 'ON FIRE' :
     'COMBO',
     0, 36
   )
@@ -1114,10 +1295,22 @@ function frame(time: number) {
   comboFlash = Math.max(0, comboFlash - dt * 2)
   breachFlash = Math.max(0, breachFlash - dt * 3)
 
-  // Spawning
+  // Timers for power effects
+  if (slowMoTimer > 0) slowMoTimer = Math.max(0, slowMoTimer - dt)
+  if (doublePtsTimer > 0) doublePtsTimer = Math.max(0, doublePtsTimer - dt)
+  if (frenzyGlow > 0) frenzyGlow = Math.max(0, frenzyGlow - dt * 1.5)
+
+  // Spawning — performance-adaptive rate
   const elapsed = time - startTime
   const { baseSpawn, minSpawn } = getSpeedForMode(gameMode)
-  spawnInterval = Math.max(minSpawn, baseSpawn - elapsed * 0.012)
+  let adaptedSpawn = Math.max(minSpawn, baseSpawn - elapsed * 0.012)
+  // High combo → spawn faster (keep pressure up)
+  if (frenzyActive) adaptedSpawn *= 0.6
+  else if (combo >= 8) adaptedSpawn *= 0.75
+  else if (combo >= 4) adaptedSpawn *= 0.85
+  // Low performance → spawn slightly slower
+  if (lives === 1 && combo === 0) adaptedSpawn *= 1.2
+  spawnInterval = adaptedSpawn
 
   if (time - lastSpawn > spawnInterval && fallingWords.length < 12) {
     spawnWord()
@@ -1127,9 +1320,24 @@ function frame(time: number) {
   const thresholdY = H * THRESHOLD_Y_RATIO
   for (let i = fallingWords.length - 1; i >= 0; i--) {
     const w = fallingWords[i]
-    w.y += w.speed * dt * 60
+
+    // Near-death acceleration: speed up when close to threshold
+    const proximityRatio = w.y / thresholdY
+    let speedMult = 1
+    if (proximityRatio > 0.7) {
+      speedMult = 1 + (proximityRatio - 0.7) * 1.5 // up to 1.45x at threshold
+    }
+    // Slow-mo power effect
+    if (slowMoTimer > 0) speedMult *= 0.35
+
+    w.y += w.baseSpeed * speedMult * dt * 60
     w.entryAnim = Math.min(1, w.entryAnim + dt * 3)
     w.flash = Math.max(0, w.flash - dt * 4)
+
+    // Heartbeat sound when word is dangerously close
+    if (proximityRatio > 0.75 && !w.active) {
+      playHeartbeat(time)
+    }
 
     if (w.y > thresholdY) {
       breachWord(w)
@@ -1158,6 +1366,41 @@ function frame(time: number) {
   drawScorePopups(ctx)
   drawComboBurst(ctx)
   drawBreachFlash(ctx)
+
+  // FRENZY mode screen tint
+  if (frenzyActive) {
+    const pulse = 0.04 + Math.sin(time * 0.006) * 0.02
+    ctx.save()
+    ctx.fillStyle = `rgba(255, 45, 120, ${pulse})`
+    ctx.fillRect(0, 0, W, H)
+    ctx.restore()
+  }
+  if (frenzyGlow > 0) {
+    ctx.save()
+    ctx.fillStyle = `rgba(255, 45, 120, ${frenzyGlow * 0.15})`
+    ctx.fillRect(0, 0, W, H)
+    ctx.restore()
+  }
+
+  // Slow-mo visual
+  if (slowMoTimer > 0) {
+    ctx.save()
+    ctx.fillStyle = `rgba(0, 240, 255, ${0.03 + Math.sin(time * 0.004) * 0.015})`
+    ctx.fillRect(0, 0, W, H)
+    ctx.restore()
+  }
+
+  // Double points indicator
+  if (doublePtsTimer > 0) {
+    ctx.save()
+    ctx.fillStyle = AMBER
+    ctx.globalAlpha = 0.7
+    ctx.font = '500 10px "Orbitron", sans-serif'
+    ctx.textAlign = 'center'
+    ctx.fillText(`DOUBLE PTS ${Math.ceil(doublePtsTimer)}s`, W / 2, H - 60)
+    ctx.restore()
+  }
+
   drawHUD(ctx, time)
 
   ctx.restore()

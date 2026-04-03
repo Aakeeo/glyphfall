@@ -297,6 +297,8 @@
     touch-action: manipulation;
   }
   .diff-btn:last-child { border-right: none; }
+  .diff-daily { color: var(--amber); border-left: 1px solid rgba(255, 184, 0, 0.2); }
+  .diff-daily.active { color: var(--amber); background: rgba(255, 184, 0, 0.1); text-shadow: 0 0 10px rgba(255, 184, 0, 0.4); }
   .diff-btn:hover { color: rgba(255, 255, 255, 0.6); background: rgba(0, 240, 255, 0.04); }
   .diff-btn.active {
     color: var(--cyan);
@@ -485,6 +487,7 @@
     <button class="diff-btn" data-diff="easy">Easy</button>
     <button class="diff-btn active" data-diff="normal">Normal</button>
     <button class="diff-btn" data-diff="hard">Hard</button>
+    <button class="diff-btn diff-daily" data-diff="daily">Daily</button>
   </div>
   <div id="hi-scores" class="hi-scores hidden"></div>
   <button class="start-btn" id="start-btn">INITIALIZE</button>

@@ -12,6 +12,31 @@ function trackEvent(name: string, params?: Record<string, string | number>) {
   try { gtag('event', name, params) } catch {}
 }
 
+// ── Seeded RNG (for deterministic daily challenge) ───────────────
+
+function mulberry32(seed: number): () => number {
+  return () => {
+    seed |= 0; seed = seed + 0x6D2B79F5 | 0
+    let t = Math.imul(seed ^ seed >>> 15, 1 | seed)
+    t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t
+    return ((t ^ t >>> 14) >>> 0) / 4294967296
+  }
+}
+
+function getDailySeed(): number {
+  const d = new Date()
+  return d.getFullYear() * 10000 + (d.getMonth() + 1) * 100 + d.getDate()
+}
+
+function getDayNumber(): number {
+  // Day 1 = April 3, 2026 (launch day)
+  const launch = new Date(2026, 3, 3).getTime()
+  const now = new Date().setHours(0, 0, 0, 0)
+  return Math.floor((now - launch) / 86400000) + 1
+}
+
+let seededRng: (() => number) | null = null
+
 // ── Word corpus ──────────────────────────────────────────────────
 
 const WORDS_EASY = [
@@ -37,18 +62,20 @@ const WORDS_HARD = [
 ]
 
 type WordDifficulty = 'easy' | 'medium' | 'hard'
-type GameMode = 'easy' | 'normal' | 'hard'
+type GameMode = 'easy' | 'normal' | 'hard' | 'daily'
 
 function pickWord(difficulty: WordDifficulty): string {
   const pool =
     difficulty === 'easy' ? WORDS_EASY :
     difficulty === 'medium' ? WORDS_MEDIUM :
     WORDS_HARD
-  return pool[Math.floor(Math.random() * pool.length)]
+  const rng = seededRng || Math.random
+  return pool[Math.floor(rng() * pool.length)]
 }
 
 function getDifficulty(elapsed: number, mode: GameMode): WordDifficulty {
-  const r = Math.random()
+  const rng = seededRng || Math.random
+  const r = rng()
 
   if (mode === 'easy') {
     if (elapsed < 20000) return 'easy'
@@ -73,6 +100,7 @@ function getDifficulty(elapsed: number, mode: GameMode): WordDifficulty {
 function getSpeedForMode(mode: GameMode): { baseSpeed: number; maxSpeed: number; baseSpawn: number; minSpawn: number } {
   if (mode === 'easy') return { baseSpeed: 0.28, maxSpeed: 1.0, baseSpawn: 2800, minSpawn: 1000 }
   if (mode === 'hard') return { baseSpeed: 0.55, maxSpeed: 2.2, baseSpawn: 1600, minSpawn: 400 }
+  // normal and daily use the same tuning
   return { baseSpeed: 0.4, maxSpeed: 1.8, baseSpawn: 2200, minSpawn: 600 }
 }
 
@@ -557,13 +585,14 @@ function spawnWord() {
   const difficulty = getDifficulty(elapsed, gameMode)
 
   // ~7% chance of power word (after 10s, max 1 on screen)
+  const rng = seededRng || Math.random
   const hasPowerOnScreen = fallingWords.some(w => w.power !== null)
-  const isPower = !hasPowerOnScreen && elapsed > 10000 && Math.random() < 0.07
+  const isPower = !hasPowerOnScreen && elapsed > 10000 && rng() < 0.07
   let power: PowerType = null
   let text: string
 
   if (isPower) {
-    const pw = POWER_WORDS[Math.floor(Math.random() * POWER_WORDS.length)]
+    const pw = POWER_WORDS[Math.floor(rng() * POWER_WORDS.length)]
     text = pw.text
     power = pw.power
   } else {
@@ -580,11 +609,11 @@ function spawnWord() {
   const { width, height, prepared } = measureWord(text)
 
   const margin = 60
-  const x = margin + Math.random() * (W - width - margin * 2)
+  const x = margin + rng() * (W - width - margin * 2)
 
   const { baseSpeed: modeBaseSpeed, maxSpeed } = getSpeedForMode(gameMode)
   const speedRamp = Math.min(1, elapsed / 120000)
-  let speed = modeBaseSpeed + speedRamp * (maxSpeed - modeBaseSpeed) + (Math.random() - 0.5) * 0.3
+  let speed = modeBaseSpeed + speedRamp * (maxSpeed - modeBaseSpeed) + (rng() - 0.5) * 0.3
 
   // Performance-adaptive: high combo → faster, low performance → slower
   if (combo >= 8) speed *= 1.15
@@ -767,15 +796,20 @@ function buildScoreCard(): string {
     return '█'.repeat(filled) + '░'.repeat(len - filled)
   }
 
-  const modeLabel = gameMode === 'easy' ? 'Easy' : gameMode === 'hard' ? 'Hard' : 'Normal'
+  const isDaily = gameMode === 'daily'
+  const header = isDaily
+    ? `GLYPHFALL DAILY #${getDayNumber()} ⚡ ${lastGameScore.toLocaleString()} pts`
+    : `GLYPHFALL ⚡ ${lastGameScore.toLocaleString()} pts`
+
+  const modeLabel = gameMode === 'easy' ? 'Easy' : gameMode === 'hard' ? 'Hard' : gameMode === 'daily' ? 'Daily' : 'Normal'
 
   return [
-    `GLYPHFALL ⚡ ${lastGameScore.toLocaleString()} pts`,
+    header,
     `${bar(lastGameWPM, 100, 12)} ${lastGameWPM} WPM`,
     `🔥 Best combo: ${lastGameCombo}x`,
     `⌨️ Accuracy: ${lastGameAccuracy}%`,
     `⏱️ Survived: ${lastGameSurvivedSecs}s`,
-    `📊 Mode: ${modeLabel}`,
+    ...(isDaily ? [] : [`📊 Mode: ${modeLabel}`]),
     ``,
     `https://aakeeo.github.io/glyphfall/`,
   ].join('\n')
@@ -804,6 +838,8 @@ shareBtn.addEventListener('click', async () => {
 
 function startGame() {
   initAudio()
+  // Initialize seeded RNG for daily mode
+  seededRng = gameMode === 'daily' ? mulberry32(getDailySeed()) : null
   state = 'playing'
   score = 0
   combo = 0
@@ -900,6 +936,15 @@ function gameOver() {
     difficulty: gameMode,
     is_new_best: newBestScore ? 1 : 0,
   })
+
+  if (gameMode === 'daily') {
+    trackEvent('daily_challenge', {
+      day_number: getDayNumber(),
+      score,
+      wpm,
+      best_combo: bestCombo,
+    })
+  }
 
   const toggleBest = (id: string, isNew: boolean) => {
     const el = document.getElementById(id)

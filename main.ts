@@ -685,8 +685,6 @@ function getComboMultiplier(): number {
 }
 
 function completeWord(w: FallingWord) {
-  const hadCombo = combo
-
   combo++
   if (combo > bestCombo) bestCombo = combo
   multiplier = getComboMultiplier()
@@ -911,10 +909,34 @@ function gameOver() {
   toggleBest('nb-combo', newBestCombo)
   toggleBest('nb-wpm', newBestWPM)
 
+  // Reset feedback for this session
+  feedbackRow.classList.remove('hidden')
+  feedbackThanks.classList.add('hidden')
+
   setTimeout(() => {
     gameoverScreen.classList.remove('hidden')
   }, 800)
 }
+
+// ── Feedback buttons ─────────────────────────────────────────────
+
+const feedbackRow = document.getElementById('feedback-row') as HTMLDivElement
+const feedbackThanks = document.getElementById('feedback-thanks') as HTMLDivElement
+
+document.querySelectorAll('.fb-btn').forEach(btn => {
+  btn.addEventListener('click', () => {
+    const feedback = (btn as HTMLElement).dataset.fb!
+    trackEvent('game_feedback', {
+      feedback,
+      score: lastGameScore,
+      survived_seconds: lastGameSurvivedSecs,
+      difficulty: gameMode,
+      best_combo: lastGameCombo,
+    })
+    feedbackRow.classList.add('hidden')
+    feedbackThanks.classList.remove('hidden')
+  })
+})
 
 // ── Difficulty selector ──────────────────────────────────────────
 

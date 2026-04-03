@@ -348,6 +348,43 @@
     to { opacity: 1; text-shadow: 0 0 12px var(--amber); }
   }
 
+  /* ── FEEDBACK ROW ── */
+  .feedback-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 16px;
+    flex-wrap: wrap;
+    justify-content: center;
+  }
+  .feedback-label {
+    font: 400 11px/1 var(--mono);
+    color: rgba(255,255,255,0.3);
+    margin-right: 4px;
+  }
+  .fb-btn {
+    padding: 8px 14px;
+    background: rgba(255,255,255,0.04);
+    border: 1px solid rgba(255,255,255,0.12);
+    border-radius: 6px;
+    color: rgba(255,255,255,0.6);
+    font: 400 12px/1 var(--mono);
+    cursor: pointer;
+    transition: all 0.2s;
+    touch-action: manipulation;
+  }
+  .fb-btn:hover {
+    background: rgba(0, 240, 255, 0.08);
+    border-color: rgba(0, 240, 255, 0.3);
+    color: #fff;
+  }
+  .feedback-thanks {
+    font: 400 12px/1 var(--mono);
+    color: var(--lime);
+    margin-bottom: 16px;
+    opacity: 0.7;
+  }
+
   /* ── GAME OVER BUTTONS ── */
   .go-buttons {
     display: flex;
@@ -479,6 +516,13 @@
     </div>
   </div>
   <p class="sub" id="go-delta" style="font-size:14px;margin-bottom:8px;"></p>
+  <div class="feedback-row" id="feedback-row">
+    <span class="feedback-label">How was that?</span>
+    <button class="fb-btn" data-fb="too_easy">😴 Too Easy</button>
+    <button class="fb-btn" data-fb="just_right">😎 Just Right</button>
+    <button class="fb-btn" data-fb="too_hard">🤯 Too Hard</button>
+  </div>
+  <div class="feedback-thanks hidden" id="feedback-thanks">Thanks for the feedback!</div>
   <div class="go-buttons">
     <button class="share-btn" id="share-btn">SHARE</button>
     <button class="start-btn" id="restart-btn">REINITIALIZE</button>

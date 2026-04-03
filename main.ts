@@ -958,10 +958,47 @@ function gameOver() {
   feedbackRow.classList.remove('hidden')
   feedbackThanks.classList.add('hidden')
 
+  // Reset waitlist form (keep hidden if already submitted)
+  waitlistSubmit.textContent = 'JOIN'
+  waitlistSubmit.disabled = false
+
   setTimeout(() => {
     gameoverScreen.classList.remove('hidden')
   }, 800)
 }
+
+// ── Waitlist form ────────────────────────────────────────────────
+
+const waitlistForm = document.getElementById('waitlist-form') as HTMLDivElement
+const waitlistDone = document.getElementById('waitlist-done') as HTMLDivElement
+const waitlistEmail = document.getElementById('waitlist-email') as HTMLInputElement
+const waitlistSubmit = document.getElementById('waitlist-submit') as HTMLButtonElement
+
+waitlistSubmit.addEventListener('click', async () => {
+  const email = waitlistEmail.value.trim()
+  if (!email || !email.includes('@')) return
+
+  waitlistSubmit.textContent = '...'
+  waitlistSubmit.disabled = true
+
+  try {
+    await fetch('https://formsubmit.co/ajax/isarunchauhan87@gmail.com', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
+      body: JSON.stringify({
+        email,
+        source: 'glyphfall-gameover',
+        score: lastGameScore,
+        difficulty: gameMode,
+      }),
+    })
+  } catch {}
+
+  trackEvent('waitlist_signup', { difficulty: gameMode, score: lastGameScore })
+
+  waitlistForm.classList.add('hidden')
+  waitlistDone.classList.remove('hidden')
+})
 
 // ── Feedback buttons ─────────────────────────────────────────────
 

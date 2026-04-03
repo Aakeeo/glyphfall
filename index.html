@@ -387,6 +387,62 @@
     opacity: 0.7;
   }
 
+  /* ── WAITLIST FORM ── */
+  .waitlist {
+    margin-bottom: 20px;
+    text-align: center;
+  }
+  .waitlist-label {
+    font: 400 12px/1.4 var(--mono);
+    color: rgba(255,255,255,0.35);
+    margin-bottom: 10px;
+  }
+  .waitlist-row {
+    display: flex;
+    gap: 8px;
+    justify-content: center;
+    flex-wrap: wrap;
+  }
+  .waitlist-input {
+    padding: 10px 14px;
+    width: 220px;
+    background: rgba(255,255,255,0.04);
+    border: 1px solid rgba(255, 184, 0, 0.25);
+    border-radius: 6px;
+    color: #fff;
+    font: 400 13px/1 var(--mono);
+    outline: none;
+    caret-color: var(--amber);
+    touch-action: manipulation;
+    transition: border-color 0.2s;
+  }
+  .waitlist-input:focus {
+    border-color: rgba(255, 184, 0, 0.5);
+  }
+  .waitlist-input::placeholder {
+    color: rgba(255, 184, 0, 0.3);
+  }
+  .waitlist-submit {
+    padding: 10px 18px;
+    background: transparent;
+    border: 1px solid var(--amber);
+    border-radius: 6px;
+    color: var(--amber);
+    font: 500 12px/1 var(--display);
+    letter-spacing: 0.08em;
+    cursor: pointer;
+    transition: all 0.2s;
+    touch-action: manipulation;
+  }
+  .waitlist-submit:hover {
+    background: rgba(255, 184, 0, 0.08);
+  }
+  .waitlist-done {
+    font: 400 12px/1 var(--mono);
+    color: var(--lime);
+    opacity: 0.7;
+  }
+
   /* ── GAME OVER BUTTONS ── */
   .go-buttons {
     display: flex;
@@ -526,6 +582,14 @@
     <button class="fb-btn" data-fb="too_hard">🤯 Too Hard</button>
   </div>
   <div class="feedback-thanks hidden" id="feedback-thanks">Thanks for the feedback!</div>
+  <div class="waitlist" id="waitlist">
+    <p class="waitlist-label">Want to compete with your team? Get notified when teams launch.</p>
+    <div class="waitlist-row" id="waitlist-form">
+      <input class="waitlist-input" id="waitlist-email" type="email" placeholder="your@email.com" required>
+      <button class="waitlist-submit" id="waitlist-submit">JOIN</button>
+    </div>
+    <div class="waitlist-done hidden" id="waitlist-done">You're on the list!</div>
+  </div>
   <div class="go-buttons">
     <button class="share-btn" id="share-btn">SHARE</button>
     <button class="start-btn" id="restart-btn">REINITIALIZE</button>
